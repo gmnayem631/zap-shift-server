@@ -33,6 +33,26 @@ async function run() {
       res.send(parcels);
     });
 
+    // GET parcels by user email, sorted by latest
+    app.get("/parcels", async (req, res) => {
+      try {
+        const userEmail = req.body.email;
+        if (!userEmail) {
+          return res
+            .status(400)
+            .send({ message: "Email query parameter is required" });
+        }
+
+        const query = userEmail ? { created_by: userEmail } : {};
+        const options = { sort: { createdAt: -1 } }; // newest first
+        const parcels = await parcelCollection.find(query, options).toArray();
+        res.send(parcels);
+      } catch (error) {
+        console.error("Error fetching parcels", error);
+        res.status(500).send({ message: "Failed to get parcels" });
+      }
+    });
+
     // create a new parcel through POST
     app.post("/parcels", async (req, res) => {
       try {
