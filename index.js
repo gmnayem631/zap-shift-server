@@ -53,6 +53,32 @@ async function run() {
       }
     });
 
+    // get parcel by ID
+
+    app.get("/parcels/:id", async (req, res) => {
+      const { id } = req.params;
+
+      // Validate MongoDB ObjectId
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid parcel ID" });
+      }
+
+      try {
+        const parcel = await parcelCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!parcel) {
+          return res.status(404).send({ message: "Parcel not found" });
+        }
+
+        res.send(parcel);
+      } catch (error) {
+        console.error("Error fetching parcel by ID:", error);
+        res.status(500).send({ message: "Failed to fetch parcel" });
+      }
+    });
+
     // create a new parcel through POST
     app.post("/parcels", async (req, res) => {
       try {
@@ -77,6 +103,23 @@ async function run() {
       } catch (error) {
         console.error("Error deleting parcel:", error);
         res.status(500).send({ message: "Failed to delete parcel" });
+      }
+    });
+
+    // stripe payment intent api
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { amount, currency } = req.body;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount,
+          currency: currency || "usd",
+          automatic_payment_methods: { enabled: true },
+        });
+
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
       }
     });
 
