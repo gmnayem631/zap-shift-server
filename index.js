@@ -107,6 +107,49 @@ async function run() {
       }
     });
 
+    // payment history api
+    app.post("/payments", async (req, res) => {
+      const { parcelId, userEmail, amount, transactionId } = req.body;
+
+      // Basic validation
+      if (!parcelId || !userEmail || !amount || !transactionId) {
+        return res.status(400).send({ message: "Missing required fields" });
+      }
+
+      // Validate ID
+      if (!ObjectId.isValid(parcelId)) {
+        return res.status(400).send({ message: "Invalid parcel ID" });
+      }
+
+      try {
+        // Update parcel's payment status
+        const parcelUpdateResult = await parcelCollection.updateOne(
+          { _id: new ObjectId(parcelId) },
+          { $set: { paymentStatus: "paid" } }
+        );
+
+        // Record payment
+        const paymentDoc = {
+          parcelId: new ObjectId(parcelId),
+          userEmail,
+          amount,
+          transactionId,
+          paidAt: new Date(),
+        };
+
+        const paymentResult = await paymentCollection.insertOne(paymentDoc);
+
+        res.send({
+          message: "Payment recorded and parcel marked as paid",
+          parcelUpdateResult,
+          paymentResult,
+        });
+      } catch (error) {
+        console.error("Payment processing failed:", error);
+        res.status(500).send({ message: "Payment processing failed" });
+      }
+    });
+
     // stripe payment intent api
     app.post("/create-payment-intent", async (req, res) => {
       const amountsInCents = req.body.amountsInCents;
