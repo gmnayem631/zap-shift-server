@@ -27,7 +27,9 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-    const parcelCollection = client.db("parcelDB").collection("parcels");
+    const db = client.db("parcelDB");
+    const parcelCollection = db.collection("parcels");
+    const paymentsCollection = db.collection("payments");
 
     app.get("/parcels", async (req, res) => {
       const parcels = await parcelCollection.find().toArray();
@@ -107,19 +109,61 @@ async function run() {
       }
     });
 
+    // POST: Add a new tracking update
+    app.post("/tracking", async (req, res) => {
+      try {
+        const { parcelId, status, note, updated_by = "" } = req.body;
+
+        if (!parcelId || !status) {
+          return res
+            .status(400)
+            .send({ message: "parcelId and status are required" });
+        }
+
+        const trackingUpdate = {
+          parcelId: new ObjectId(parcelId),
+          status,
+          note: note || "",
+          updated_by: updated_by || "system",
+          updated_at: new Date(),
+        };
+
+        const result = await db
+          .collection("trackingUpdates")
+          .insertOne(trackingUpdate);
+        res.send({ success: true, result });
+      } catch (error) {
+        console.error("Error adding tracking update:", error);
+        res.status(500).send({ message: "Failed to add tracking update" });
+      }
+    });
+
+    // GET: Fetch tracking updates by parcelId
+    app.get("/tracking-updates/:parcelId", async (req, res) => {
+      try {
+        const { parcelId } = req.params;
+
+        if (!ObjectId.isValid(parcelId)) {
+          return res.status(400).send({ message: "Invalid parcel ID" });
+        }
+
+        const updates = await db
+          .collection("trackingUpdates")
+          .find({ parcelId: new ObjectId(parcelId) })
+          .sort({ updated_at: -1 })
+          .toArray();
+
+        res.send(updates);
+      } catch (error) {
+        console.error("Error fetching tracking updates:", error);
+        res.status(500).send({ message: "Failed to fetch tracking updates" });
+      }
+    });
+
     // payment history api
     app.post("/payments", async (req, res) => {
-      const { parcelId, userEmail, amount, transactionId } = req.body;
-
-      // Basic validation
-      if (!parcelId || !userEmail || !amount || !transactionId) {
-        return res.status(400).send({ message: "Missing required fields" });
-      }
-
-      // Validate ID
-      if (!ObjectId.isValid(parcelId)) {
-        return res.status(400).send({ message: "Invalid parcel ID" });
-      }
+      const { parcelId, userEmail, amount, transactionId, paymentMethod } =
+        req.body;
 
       try {
         // Update parcel's payment status
@@ -134,10 +178,12 @@ async function run() {
           userEmail,
           amount,
           transactionId,
-          paidAt: new Date(),
+          paymentMethod,
+          paid_at_string: new Date().toISOString(),
+          paid_at: new Date(),
         };
 
-        const paymentResult = await paymentCollection.insertOne(paymentDoc);
+        const paymentResult = await paymentsCollection.insertOne(paymentDoc);
 
         res.send({
           message: "Payment recorded and parcel marked as paid",
@@ -147,6 +193,23 @@ async function run() {
       } catch (error) {
         console.error("Payment processing failed:", error);
         res.status(500).send({ message: "Payment processing failed" });
+      }
+    });
+
+    // payment history GET
+    app.get("/payments/user/:email", async (req, res) => {
+      const userEmail = req.params.email;
+
+      try {
+        const payments = await paymentsCollection
+          .find({ userEmail })
+          .sort({ paid_at: -1 }) // latest first
+          .toArray();
+
+        res.send(payments);
+      } catch (error) {
+        console.error("Error fetching user payments:", error);
+        res.status(500).send({ message: "Failed to fetch user payments" });
       }
     });
 
